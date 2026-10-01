@@ -5,22 +5,43 @@
 #include "secrets.h"
 
 // ============================================================
-// НАСТРОЙКИ
+// ESP32-S3 ALARM
+// Wi-Fi STA + Access Point
 // ============================================================
 
-// Если встроенный LED на твоей плате находится не на GPIO 48,
-// измени это значение.
+
+// ============================================================
+// LED
+// ============================================================
+
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 48
 #endif
 
 const int LED_PIN = LED_BUILTIN;
 
-// Веб-сервер
-WebServer server(80);
 
 // ============================================================
-// СОСТОЯНИЕ БУДИЛЬНИКА
+// ACCESS POINT
+// ============================================================
+
+const char* AP_SSID = "ESP32-ALARM";
+const char* AP_PASSWORD = "alarm1234";
+
+IPAddress AP_IP(192, 168, 4, 1);
+IPAddress AP_GATEWAY(192, 168, 4, 1);
+IPAddress AP_SUBNET(255, 255, 255, 0);
+
+
+// ============================================================
+// WEB SERVER
+// ============================================================
+
+WebServer server(80);
+
+
+// ============================================================
+// ALARM STATE
 // ============================================================
 
 bool alarmRunning = false;
@@ -33,864 +54,990 @@ unsigned long alarmDurationMillis = 0;
 
 unsigned long lastBlinkMillis = 0;
 
-// Скорость мигания LED
 const unsigned long BLINK_INTERVAL = 300;
 
+
 // ============================================================
-// HTML
+// HTML PAGE
 // ============================================================
 
 String makePage()
 {
     String html = R"rawliteral(
 <!DOCTYPE html>
-<html lang="ru">
+
+<html lang="en">
 
 <head>
 
-    <meta charset="UTF-8">
+<meta charset="UTF-8">
 
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1"
-    >
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+>
 
-    <meta
-        name="theme-color"
-        content="#0a0a0a"
-    >
+<meta
+    name="theme-color"
+    content="#080808"
+>
 
-    <title>ESP32 // ALARM</title>
+<title>ESP32 // ALARM</title>
 
-    <style>
 
-        * {
-            box-sizing: border-box;
-        }
+<style>
 
-        :root {
-            --bg: #0a0a0a;
-            --panel: #111111;
-            --panel2: #151515;
+* {
+    box-sizing: border-box;
+}
 
-            --border: #292929;
 
-            --text: #eeeeee;
-            --muted: #777777;
+:root {
 
-            --accent: #ffffff;
+    --bg: #080808;
 
-            --danger: #ff3b30;
-        }
+    --panel: #101010;
 
-        /* ====================================================
-           BODY
-           ==================================================== */
+    --border: #292929;
 
-        body {
-            margin: 0;
+    --border-light: #3a3a3a;
 
-            min-height: 100vh;
+    --text: #eeeeee;
 
-            background: var(--bg);
+    --muted: #777777;
 
-            color: var(--text);
+    --danger: #ff3b30;
 
-            font-family:
-                "SFMono-Regular",
-                "Cascadia Code",
-                "Roboto Mono",
-                Consolas,
-                monospace;
+}
 
-            display: flex;
 
-            justify-content: center;
+body {
 
-            align-items: center;
+    margin: 0;
 
-            padding: 20px;
-        }
+    min-height: 100vh;
 
-        /* ====================================================
-           CONTAINER
-           ==================================================== */
+    background: var(--bg);
 
-        .container {
-            width: 100%;
+    color: var(--text);
 
-            max-width: 520px;
-        }
+    font-family:
+        "SFMono-Regular",
+        "Cascadia Code",
+        "Roboto Mono",
+        Consolas,
+        monospace;
 
-        /* ====================================================
-           HEADER
-           ==================================================== */
+    display: flex;
 
-        .header {
-            display: flex;
+    justify-content: center;
 
-            justify-content: space-between;
+    align-items: center;
 
-            align-items: center;
+    padding: 20px;
+}
 
-            margin-bottom: 12px;
 
-            color: var(--muted);
+.container {
 
-            font-size: 12px;
+    width: 100%;
 
-            letter-spacing: 2px;
+    max-width: 540px;
+}
 
-            text-transform: uppercase;
-        }
 
-        .online {
-            display: flex;
+.header {
 
-            align-items: center;
+    display: flex;
 
-            gap: 7px;
-        }
+    justify-content: space-between;
 
-        .dot {
-            width: 6px;
-            height: 6px;
+    align-items: center;
 
-            border-radius: 50%;
+    margin-bottom: 12px;
 
-            background: #aaa;
-        }
+    color: var(--muted);
 
-        /* ====================================================
-           CARD
-           ==================================================== */
+    font-size: 11px;
 
-        .card {
-            background: var(--panel);
+    letter-spacing: 2px;
 
-            border: 1px solid var(--border);
+    text-transform: uppercase;
+}
 
-            border-radius: 4px;
 
-            overflow: hidden;
+.online {
 
-            box-shadow:
-                0 20px 60px rgba(0, 0, 0, 0.5);
-        }
+    display: flex;
 
-        /* ====================================================
-           TITLE
-           ==================================================== */
+    align-items: center;
 
-        .title {
-            padding: 22px 24px;
+    gap: 7px;
+}
 
-            border-bottom: 1px solid var(--border);
 
-            font-size: 14px;
+.dot {
 
-            letter-spacing: 2px;
+    width: 6px;
 
-            font-weight: bold;
-        }
+    height: 6px;
 
-        .title span {
-            color: var(--muted);
-        }
+    border-radius: 50%;
 
-        /* ====================================================
-           DISPLAY
-           ==================================================== */
+    background: #aaa;
+}
 
-        .display {
-            padding: 42px 24px 38px;
 
-            text-align: center;
+.card {
 
-            border-bottom: 1px solid var(--border);
-        }
+    background: var(--panel);
 
-        .display-label {
-            color: var(--muted);
+    border: 1px solid var(--border);
 
-            font-size: 10px;
+    border-radius: 4px;
 
-            letter-spacing: 3px;
+    overflow: hidden;
 
-            margin-bottom: 12px;
+    box-shadow:
+        0 20px 60px rgba(0,0,0,.5);
+}
 
-            text-transform: uppercase;
-        }
 
-        .time {
-            font-size: clamp(52px, 15vw, 82px);
+.title {
 
-            line-height: 1;
+    padding: 22px 24px;
 
-            font-weight: 300;
+    border-bottom: 1px solid var(--border);
 
-            letter-spacing: -4px;
+    font-size: 14px;
 
-            font-variant-numeric: tabular-nums;
-        }
+    letter-spacing: 2px;
 
-        /* ====================================================
-           STATUS
-           ==================================================== */
+    font-weight: bold;
+}
 
-        .status {
-            margin-top: 22px;
 
-            display: inline-flex;
+.title span {
 
-            align-items: center;
+    color: var(--muted);
+}
 
-            gap: 9px;
 
-            padding: 7px 11px;
+.display {
 
-            border: 1px solid var(--border);
+    padding: 42px 24px 38px;
 
-            color: var(--muted);
+    text-align: center;
 
-            font-size: 10px;
+    border-bottom: 1px solid var(--border);
+}
 
-            letter-spacing: 1.5px;
 
-            text-transform: uppercase;
-        }
+.display-label {
 
-        .status-dot {
-            width: 5px;
-            height: 5px;
+    color: var(--muted);
 
-            background: #555;
-        }
+    font-size: 10px;
 
-        .status.active {
-            color: var(--text);
-        }
+    letter-spacing: 3px;
 
-        .status.active .status-dot {
-            background: #aaa;
-        }
+    margin-bottom: 12px;
 
-        /* ====================================================
-           ALARM STATUS
-           ==================================================== */
+    text-transform: uppercase;
+}
 
-        .status.alarm {
-            color: #fff;
 
-            border-color: var(--danger);
+.time {
 
-            background: rgba(255, 59, 48, 0.08);
+    font-size: clamp(52px, 15vw, 82px);
 
-            animation: alarmPulse 0.8s infinite alternate;
-        }
+    line-height: 1;
 
-        .status.alarm .status-dot {
-            background: var(--danger);
-        }
+    font-weight: 300;
 
-        @keyframes alarmPulse {
+    letter-spacing: -4px;
 
-            from {
-                opacity: 1;
-            }
+    font-variant-numeric: tabular-nums;
+}
 
-            to {
-                opacity: 0.45;
-            }
 
-        }
+.status {
 
-        /* ====================================================
-           CONTROLS
-           ==================================================== */
+    margin-top: 22px;
 
-        .controls {
-            padding: 24px;
-        }
+    display: inline-flex;
 
-        .label {
-            display: block;
+    align-items: center;
 
-            margin-bottom: 8px;
+    gap: 9px;
 
-            color: var(--muted);
+    padding: 7px 11px;
 
-            font-size: 10px;
+    border: 1px solid var(--border);
 
-            letter-spacing: 2px;
+    color: var(--muted);
 
-            text-transform: uppercase;
-        }
+    font-size: 10px;
 
-        .row {
-            display: grid;
+    letter-spacing: 1.5px;
 
-            grid-template-columns: 1fr 1fr;
+    text-transform: uppercase;
+}
 
-            gap: 8px;
 
-            margin-bottom: 16px;
-        }
+.status-dot {
 
-        input,
-        select {
+    width: 5px;
 
-            width: 100%;
+    height: 5px;
 
-            padding: 14px 15px;
+    background: #555;
+}
 
-            background: #0c0c0c;
 
-            border: 1px solid var(--border);
+.status.active {
 
-            border-radius: 3px;
+    color: var(--text);
+}
 
-            outline: none;
 
-            color: var(--text);
+.status.active .status-dot {
 
-            font-family: inherit;
+    background: #aaa;
+}
 
-            font-size: 15px;
 
-            transition:
-                border-color 0.15s,
-                background 0.15s;
-        }
+.status.alarm {
 
-        input:focus,
-        select:focus {
+    color: #fff;
 
-            border-color: #555;
+    border-color: var(--danger);
 
-            background: #101010;
-        }
+    background: rgba(255,59,48,.08);
 
-        select {
-            cursor: pointer;
-        }
+    animation:
+        alarmPulse .8s infinite alternate;
+}
 
-        /* ====================================================
-           BUTTONS
-           ==================================================== */
 
-        button {
+.status.alarm .status-dot {
 
-            width: 100%;
+    background: var(--danger);
+}
 
-            padding: 15px;
 
-            border-radius: 3px;
+@keyframes alarmPulse {
 
-            font-family: inherit;
+    from {
+        opacity: 1;
+    }
 
-            font-size: 12px;
+    to {
+        opacity: .45;
+    }
 
-            font-weight: bold;
+}
 
-            letter-spacing: 1.5px;
 
-            text-transform: uppercase;
+.controls {
 
-            cursor: pointer;
+    padding: 24px;
+}
 
-            transition:
-                background 0.15s,
-                border-color 0.15s,
-                transform 0.08s;
-        }
 
-        button:active {
-            transform: translateY(1px);
-        }
+.label {
 
-        /* START */
+    display: block;
 
-        .start {
+    margin-bottom: 8px;
 
-            background: var(--accent);
+    color: var(--muted);
 
-            color: #000;
+    font-size: 10px;
 
-            border: 1px solid var(--accent);
-        }
+    letter-spacing: 2px;
 
-        .start:hover {
-            background: #dcdcdc;
-        }
+    text-transform: uppercase;
+}
 
-        /* STOP */
 
-        .stop {
+.row {
 
-            margin-top: 8px;
+    display: grid;
 
-            background: transparent;
+    grid-template-columns: 1fr 1fr;
 
-            color: #888;
+    gap: 8px;
 
-            border: 1px solid var(--border);
-        }
+    margin-bottom: 16px;
+}
 
-        .stop:hover {
 
-            color: #fff;
+input,
+select {
 
-            border-color: #555;
+    width: 100%;
 
-            background: #171717;
-        }
+    padding: 14px 15px;
 
-        /* ====================================================
-           FOOTER
-           ==================================================== */
+    background: #0c0c0c;
 
-        .footer {
+    border: 1px solid var(--border);
 
-            padding: 13px 24px;
+    border-radius: 3px;
 
-            border-top: 1px solid var(--border);
+    outline: none;
 
-            color: #444;
+    color: var(--text);
 
-            font-size: 9px;
+    font-family: inherit;
 
-            letter-spacing: 1px;
+    font-size: 15px;
+}
 
-            display: flex;
 
-            justify-content: space-between;
-        }
+input:focus,
+select:focus {
 
-        /* ====================================================
-           MOBILE
-           ==================================================== */
+    border-color: var(--border-light);
 
-        @media (max-width: 400px) {
+    background: #101010;
+}
 
-            body {
-                padding: 12px;
-            }
 
-            .controls,
-            .display {
+select {
 
-                padding-left: 18px;
+    cursor: pointer;
+}
 
-                padding-right: 18px;
-            }
 
-            .time {
-                font-size: 55px;
-            }
-        }
+button {
 
-    </style>
+    width: 100%;
+
+    padding: 15px;
+
+    border-radius: 3px;
+
+    font-family: inherit;
+
+    font-size: 12px;
+
+    font-weight: bold;
+
+    letter-spacing: 1.5px;
+
+    text-transform: uppercase;
+
+    cursor: pointer;
+}
+
+
+.start {
+
+    background: #fff;
+
+    color: #000;
+
+    border: 1px solid #fff;
+}
+
+
+.start:hover {
+
+    background: #ddd;
+}
+
+
+.stop {
+
+    margin-top: 8px;
+
+    background: transparent;
+
+    color: #888;
+
+    border: 1px solid var(--border);
+}
+
+
+.stop:hover {
+
+    color: #fff;
+
+    border-color: #555;
+
+    background: #171717;
+}
+
+
+.network {
+
+    padding: 18px 24px;
+
+    border-top: 1px solid var(--border);
+
+    font-size: 10px;
+
+    letter-spacing: 1px;
+}
+
+
+.network-title {
+
+    color: var(--muted);
+
+    margin-bottom: 12px;
+
+    text-transform: uppercase;
+}
+
+
+.net-row {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    padding: 5px 0;
+}
+
+
+.net-label {
+
+    color: #555;
+}
+
+
+.net-value {
+
+    color: #aaa;
+
+    text-align: right;
+}
+
+
+.footer {
+
+    padding: 13px 24px;
+
+    border-top: 1px solid var(--border);
+
+    color: #444;
+
+    font-size: 9px;
+
+    letter-spacing: 1px;
+
+    display: flex;
+
+    justify-content: space-between;
+}
+
+
+@media (max-width: 400px) {
+
+    body {
+        padding: 12px;
+    }
+
+    .controls,
+    .display {
+        padding-left: 18px;
+        padding-right: 18px;
+    }
+
+    .time {
+        font-size: 55px;
+    }
+
+}
+
+</style>
 
 </head>
 
+
 <body>
+
 
 <div class="container">
 
-    <!-- ====================================================
-         HEADER
-         ==================================================== -->
 
-    <div class="header">
+<div class="header">
 
-        <div>
-            ESP32 // ALARM
-        </div>
-
-        <div class="online">
-
-            <span class="dot"></span>
-
-            ONLINE
-
-        </div>
-
+    <div>
+        ESP32 // ALARM
     </div>
 
+    <div class="online">
 
-    <!-- ====================================================
-         CARD
-         ==================================================== -->
+        <span class="dot"></span>
 
-    <div class="card">
-
-
-        <!-- TITLE -->
-
-        <div class="title">
-
-            TIMER
-            <span>/ LOCAL</span>
-
-        </div>
-
-
-        <!-- ==================================================
-             DISPLAY
-             ================================================== -->
-
-        <div class="display">
-
-            <div class="display-label">
-
-                remaining
-
-            </div>
-
-
-            <div
-                class="time"
-                id="timer"
-            >
-                --:--
-            </div>
-
-
-            <div
-                class="status"
-                id="status"
-            >
-
-                <span class="status-dot"></span>
-
-                <span id="statusText">
-                    READY
-                </span>
-
-            </div>
-
-        </div>
-
-
-        <!-- ==================================================
-             CONTROLS
-             ================================================== -->
-
-        <div class="controls">
-
-            <label class="label">
-
-                duration
-
-            </label>
-
-
-            <div class="row">
-
-                <input
-                    id="duration"
-                    type="number"
-                    min="1"
-                    value="30"
-                    placeholder="30"
-                >
-
-
-                <select id="unit">
-
-                    <option value="seconds">
-                        SECONDS
-                    </option>
-
-                    <option value="minutes">
-                        MINUTES
-                    </option>
-
-                </select>
-
-            </div>
-
-
-            <button
-                class="start"
-                onclick="startAlarm()"
-            >
-
-                START TIMER
-
-            </button>
-
-
-            <button
-                class="stop"
-                onclick="stopAlarm()"
-            >
-
-                STOP ALARM
-
-            </button>
-
-        </div>
-
-
-        <!-- ==================================================
-             FOOTER
-             ================================================== -->
-
-        <div class="footer">
-
-            <span>
-                LOCAL NETWORK
-            </span>
-
-            <span>
-                ESP32-S3
-            </span>
-
-        </div>
+        ONLINE
 
     </div>
 
 </div>
 
 
+<div class="card">
+
+
+<div class="title">
+
+    TIMER
+
+    <span>/ LOCAL</span>
+
+</div>
+
+
+<div class="display">
+
+    <div class="display-label">
+        remaining
+    </div>
+
+
+    <div
+        class="time"
+        id="timer"
+    >
+        --:--
+    </div>
+
+
+    <div
+        class="status"
+        id="status"
+    >
+
+        <span class="status-dot"></span>
+
+        <span id="statusText">
+            READY
+        </span>
+
+    </div>
+
+</div>
+
+
+<div class="controls">
+
+
+<label class="label">
+    duration
+</label>
+
+
+<div class="row">
+
+
+<input
+    id="duration"
+    type="number"
+    min="1"
+    max="4294967"
+    value="30"
+    placeholder="30"
+>
+
+
+<select id="unit">
+
+    <option value="seconds">
+        SECONDS
+    </option>
+
+    <option value="minutes">
+        MINUTES
+    </option>
+
+</select>
+
+
+</div>
+
+
+<button
+    class="start"
+    onclick="startAlarm()"
+>
+
+    START TIMER
+
+</button>
+
+
+<button
+    class="stop"
+    onclick="stopAlarm()"
+>
+
+    STOP ALARM
+
+</button>
+
+
+</div>
+
+
+<div class="network">
+
+    <div class="network-title">
+        network
+    </div>
+
+
+    <div class="net-row">
+
+        <span class="net-label">
+            WIFI
+        </span>
+
+        <span
+            class="net-value"
+            id="wifiStatus"
+        >
+            CONNECTING
+        </span>
+
+    </div>
+
+
+    <div class="net-row">
+
+        <span class="net-label">
+            WIFI IP
+        </span>
+
+        <span
+            class="net-value"
+            id="wifiIP"
+        >
+            -
+        </span>
+
+    </div>
+
+
+    <div class="net-row">
+
+        <span class="net-label">
+            ACCESS POINT
+        </span>
+
+        <span class="net-value">
+            ESP32-ALARM
+        </span>
+
+    </div>
+
+
+    <div class="net-row">
+
+        <span class="net-label">
+            AP IP
+        </span>
+
+        <span class="net-value">
+            192.168.4.1
+        </span>
+
+    </div>
+
+</div>
+
+
+<div class="footer">
+
+    <span>
+        LOCAL NETWORK
+    </span>
+
+    <span>
+        ESP32-S3
+    </span>
+
+</div>
+
+
+</div>
+
+</div>
+
+
 <script>
 
-    // ========================================================
-    // START
-    // ========================================================
 
-    async function startAlarm()
+async function startAlarm()
+{
+
+    const duration =
+        document.getElementById(
+            "duration"
+        ).value;
+
+
+    const unit =
+        document.getElementById(
+            "unit"
+        ).value;
+
+
+    if (
+        !duration ||
+        duration <= 0
+    )
     {
-        const duration =
-            document.getElementById(
-                "duration"
-            ).value;
 
-        const unit =
-            document.getElementById(
-                "unit"
-            ).value;
+        alert(
+            "Enter duration"
+        );
+
+        return;
+    }
 
 
-        if (!duration || duration <= 0)
-        {
-            alert("Enter duration");
+    try
+    {
 
-            return;
-        }
+        await fetch(
+            "/start?duration=" +
+            encodeURIComponent(duration) +
+            "&unit=" +
+            encodeURIComponent(unit)
+        );
 
 
-        try
-        {
+        updateStatus();
+
+    }
+    catch (error)
+    {
+
+        console.log(error);
+
+    }
+
+}
+
+
+async function stopAlarm()
+{
+
+    try
+    {
+
+        await fetch(
+            "/stop"
+        );
+
+
+        updateStatus();
+
+    }
+    catch (error)
+    {
+
+        console.log(error);
+
+    }
+
+}
+
+
+async function updateStatus()
+{
+
+    try
+    {
+
+        const response =
             await fetch(
-                "/start?duration=" +
-                encodeURIComponent(duration) +
-                "&unit=" +
-                encodeURIComponent(unit)
+                "/status"
             );
 
-            updateStatus();
+
+        const data =
+            await response.json();
+
+
+        const timer =
+            document.getElementById(
+                "timer"
+            );
+
+
+        const status =
+            document.getElementById(
+                "status"
+            );
+
+
+        const statusText =
+            document.getElementById(
+                "statusText"
+            );
+
+
+        if (data.triggered)
+        {
+
+            timer.innerText =
+                "00:00";
+
+
+            statusText.innerText =
+                "ALARM";
+
+
+            status.classList.remove(
+                "active"
+            );
+
+
+            status.classList.add(
+                "alarm"
+            );
+
         }
 
-        catch (error)
+        else if (data.running)
         {
-            console.log(error);
+
+            let seconds =
+                Math.ceil(
+                    data.remaining / 1000
+                );
+
+
+            let minutes =
+                Math.floor(
+                    seconds / 60
+                );
+
+
+            seconds =
+                seconds % 60;
+
+
+            timer.innerText =
+
+                String(minutes)
+                    .padStart(2, "0")
+
+                +
+
+                ":"
+
+                +
+
+                String(seconds)
+                    .padStart(2, "0");
+
+
+            statusText.innerText =
+                "RUNNING";
+
+
+            status.classList.remove(
+                "alarm"
+            );
+
+
+            status.classList.add(
+                "active"
+            );
+
         }
+
+        else
+        {
+
+            timer.innerText =
+                "--:--";
+
+
+            statusText.innerText =
+                "READY";
+
+
+            status.classList.remove(
+                "alarm"
+            );
+
+
+            status.classList.remove(
+                "active"
+            );
+
+        }
+
+
+        document.getElementById(
+            "wifiStatus"
+        ).innerText =
+            data.wifiConnected
+                ? "CONNECTED"
+                : "OFFLINE";
+
+
+        document.getElementById(
+            "wifiIP"
+        ).innerText =
+            data.wifiIP;
+
     }
 
-
-    // ========================================================
-    // STOP
-    // ========================================================
-
-    async function stopAlarm()
+    catch (error)
     {
-        try
-        {
-            await fetch("/stop");
 
-            updateStatus();
-        }
+        console.log(error);
 
-        catch (error)
-        {
-            console.log(error);
-        }
     }
 
-
-    // ========================================================
-    // STATUS
-    // ========================================================
-
-    async function updateStatus()
-    {
-        try
-        {
-            const response =
-                await fetch("/status");
+}
 
 
-            const data =
-                await response.json();
+setInterval(
+    updateStatus,
+    500
+);
 
 
-            const timer =
-                document.getElementById(
-                    "timer"
-                );
+updateStatus();
 
-
-            const status =
-                document.getElementById(
-                    "status"
-                );
-
-
-            const statusText =
-                document.getElementById(
-                    "statusText"
-                );
-
-
-            // =================================================
-            // ALARM
-            // =================================================
-
-            if (data.triggered)
-            {
-                timer.innerText = "00:00";
-
-                statusText.innerText =
-                    "ALARM";
-
-                status.classList.remove(
-                    "active"
-                );
-
-                status.classList.add(
-                    "alarm"
-                );
-            }
-
-
-            // =================================================
-            // TIMER RUNNING
-            // =================================================
-
-            else if (data.running)
-            {
-                let seconds =
-                    Math.ceil(
-                        data.remaining / 1000
-                    );
-
-
-                let minutes =
-                    Math.floor(
-                        seconds / 60
-                    );
-
-
-                seconds =
-                    seconds % 60;
-
-
-                timer.innerText =
-                    String(minutes)
-                        .padStart(2, "0")
-                    +
-                    ":" +
-                    String(seconds)
-                        .padStart(2, "0");
-
-
-                statusText.innerText =
-                    "RUNNING";
-
-
-                status.classList.remove(
-                    "alarm"
-                );
-
-                status.classList.add(
-                    "active"
-                );
-            }
-
-
-            // =================================================
-            // READY
-            // =================================================
-
-            else
-            {
-                timer.innerText =
-                    "--:--";
-
-
-                statusText.innerText =
-                    "READY";
-
-
-                status.classList.remove(
-                    "alarm"
-                );
-
-                status.classList.remove(
-                    "active"
-                );
-            }
-
-        }
-
-        catch (error)
-        {
-            console.log(error);
-        }
-    }
-
-
-    // ========================================================
-    // UPDATE EVERY 500ms
-    // ========================================================
-
-    setInterval(
-        updateStatus,
-        500
-    );
-
-
-    // ========================================================
-    // INITIAL STATUS
-    // ========================================================
-
-    updateStatus();
 
 </script>
+
 
 </body>
 
 </html>
+
 )rawliteral";
+
 
     return html;
 }
 
 
 // ============================================================
-// ГЛАВНАЯ СТРАНИЦА
+// ROOT
 // ============================================================
 
 void handleRoot()
 {
+
     server.send(
         200,
         "text/html; charset=utf-8",
         makePage()
     );
+
 }
 
 
@@ -900,13 +1047,13 @@ void handleRoot()
 
 void handleStart()
 {
-    // Проверяем параметры
 
     if (
         !server.hasArg("duration") ||
         !server.hasArg("unit")
     )
     {
+
         server.send(
             400,
             "text/plain",
@@ -914,21 +1061,27 @@ void handleStart()
         );
 
         return;
+
     }
 
 
     long duration =
-        server.arg("duration").toInt();
+        server.arg(
+            "duration"
+        ).toInt();
 
 
     String unit =
-        server.arg("unit");
+        server.arg(
+            "unit"
+        );
 
 
-    // Проверка времени
-
-    if (duration <= 0)
+    if (
+        duration <= 0
+    )
     {
+
         server.send(
             400,
             "text/plain",
@@ -936,39 +1089,34 @@ void handleStart()
         );
 
         return;
+
     }
 
 
     unsigned long durationMs;
 
 
-    // ========================================================
-    // MINUTES
-    // ========================================================
-
-    if (unit == "minutes")
+    if (
+        unit == "minutes"
+    )
     {
+
         durationMs =
             (unsigned long)duration *
             60UL *
             1000UL;
-    }
 
-    // ========================================================
-    // SECONDS
-    // ========================================================
+    }
 
     else
     {
+
         durationMs =
             (unsigned long)duration *
             1000UL;
+
     }
 
-
-    // ========================================================
-    // УСТАНАВЛИВАЕМ БУДИЛЬНИК
-    // ========================================================
 
     alarmStartMillis =
         millis();
@@ -986,8 +1134,6 @@ void handleStart()
         false;
 
 
-    // LED выключен
-
     ledState =
         false;
 
@@ -998,21 +1144,20 @@ void handleStart()
     );
 
 
-    // ========================================================
-    // SERIAL
-    // ========================================================
-
     Serial.print(
-        "Будильник установлен: "
+        "Alarm set: "
     );
+
 
     Serial.print(
         duration
     );
 
+
     Serial.print(
         " "
     );
+
 
     Serial.println(
         unit
@@ -1024,6 +1169,7 @@ void handleStart()
         "text/plain",
         "OK"
     );
+
 }
 
 
@@ -1033,6 +1179,7 @@ void handleStart()
 
 void handleStop()
 {
+
     alarmRunning =
         false;
 
@@ -1052,7 +1199,7 @@ void handleStop()
 
 
     Serial.println(
-        "Будильник выключен"
+        "Alarm stopped"
     );
 
 
@@ -1061,6 +1208,7 @@ void handleStop()
         "text/plain",
         "OK"
     );
+
 }
 
 
@@ -1070,16 +1218,16 @@ void handleStop()
 
 void handleStatus()
 {
+
     unsigned long remaining =
         0;
 
 
-    // ========================================================
-    // TIMER RUNNING
-    // ========================================================
-
-    if (alarmRunning)
+    if (
+        alarmRunning
+    )
     {
+
         unsigned long elapsed =
             millis() -
             alarmStartMillis;
@@ -1090,18 +1238,18 @@ void handleStatus()
             alarmDurationMillis
         )
         {
+
             remaining =
                 alarmDurationMillis -
                 elapsed;
+
         }
+
     }
 
 
-    // ========================================================
-    // JSON
-    // ========================================================
-
-    String json = "{";
+    String json =
+        "{";
 
 
     json +=
@@ -1143,6 +1291,37 @@ void handleStatus()
 
 
     json +=
+        ",";
+
+
+    json +=
+        "\"wifiConnected\":";
+
+
+    json +=
+        WiFi.status() ==
+        WL_CONNECTED
+            ? "true"
+            : "false";
+
+
+    json +=
+        ",";
+
+
+    json +=
+        "\"wifiIP\":\"";
+
+
+    json +=
+        WiFi.localIP().toString();
+
+
+    json +=
+        "\"";
+
+
+    json +=
         "}";
 
 
@@ -1151,6 +1330,7 @@ void handleStatus()
         "application/json",
         json
     );
+
 }
 
 
@@ -1160,11 +1340,13 @@ void handleStatus()
 
 void handleNotFound()
 {
+
     server.send(
         404,
         "text/plain",
         "404 Not Found"
     );
+
 }
 
 
@@ -1174,9 +1356,6 @@ void handleNotFound()
 
 void setup()
 {
-    // ========================================================
-    // SERIAL
-    // ========================================================
 
     Serial.begin(
         115200
@@ -1189,20 +1368,23 @@ void setup()
 
 
     Serial.println();
+
     Serial.println(
-        "================================"
+        "========================================"
     );
+
     Serial.println(
-        " ESP32-S3 LOCAL ALARM"
+        "       ESP32-S3 LOCAL ALARM"
     );
+
     Serial.println(
-        "================================"
+        "========================================"
     );
 
 
-    // ========================================================
+    // --------------------------------------------------------
     // LED
-    // ========================================================
+    // --------------------------------------------------------
 
     pinMode(
         LED_PIN,
@@ -1217,16 +1399,87 @@ void setup()
 
 
     // ========================================================
-    // WIFI
+    // WIFI AP + STA
     // ========================================================
 
     WiFi.mode(
-        WIFI_STA
+        WIFI_AP_STA
     );
 
 
+    // ========================================================
+    // ACCESS POINT
+    // ========================================================
+
+    WiFi.softAPConfig(
+        AP_IP,
+        AP_GATEWAY,
+        AP_SUBNET
+    );
+
+
+    bool apStarted =
+        WiFi.softAP(
+            AP_SSID,
+            AP_PASSWORD
+        );
+
+
+    if (
+        apStarted
+    )
+    {
+
+        Serial.println(
+            "AP started!"
+        );
+
+
+        Serial.print(
+            "AP SSID: "
+        );
+
+
+        Serial.println(
+            AP_SSID
+        );
+
+
+        Serial.print(
+            "AP IP: "
+        );
+
+
+        Serial.println(
+            WiFi.softAPIP()
+        );
+
+    }
+
+    else
+    {
+
+        Serial.println(
+            "ERROR: AP failed!"
+        );
+
+    }
+
+
+    // ========================================================
+    // HOME WIFI
+    // ========================================================
+
+    Serial.println();
+
+
     Serial.print(
-        "Connecting to Wi-Fi"
+        "Connecting to Wi-Fi: "
+    );
+
+
+    Serial.println(
+        WIFI_SSID
     );
 
 
@@ -1236,52 +1489,70 @@ void setup()
     );
 
 
+    unsigned long wifiStart =
+        millis();
+
+
     while (
-        WiFi.status() !=
-        WL_CONNECTED
+        WiFi.status() != WL_CONNECTED &&
+        millis() - wifiStart < 10000
     )
     {
+
         delay(
-            500
+            250
         );
+
 
         Serial.print(
             "."
         );
+
+    }
+
+
+    Serial.println();
+
+
+    if (
+        WiFi.status() ==
+        WL_CONNECTED
+    )
+    {
+
+        Serial.println(
+            "Wi-Fi connected!"
+        );
+
+
+        Serial.print(
+            "Wi-Fi IP: "
+        );
+
+
+        Serial.println(
+            WiFi.localIP()
+        );
+
+    }
+
+    else
+    {
+
+        Serial.println(
+            "Wi-Fi unavailable."
+        );
+
+
+        Serial.println(
+            "Portable AP is still active."
+        );
+
     }
 
 
     // ========================================================
-    // WIFI CONNECTED
-    // ========================================================
-
-    Serial.println();
-
-    Serial.println(
-        "Wi-Fi connected!"
-    );
-
-
-    Serial.print(
-        "SSID: "
-    );
-
-    Serial.println(
-        WIFI_SSID
-    );
-
-
-    Serial.print(
-        "IP: "
-    );
-
-    Serial.println(
-        WiFi.localIP()
-    );
-
-
-    // ========================================================
-    // HTTP ROUTES
+    // WEB ROUTES
     // ========================================================
 
     server.on(
@@ -1324,24 +1595,46 @@ void setup()
     server.begin();
 
 
+    Serial.println();
+
+
     Serial.println(
         "HTTP server started."
     );
 
 
     Serial.print(
-        "Open: http://"
+        "Portable URL: http://"
     );
 
 
     Serial.println(
-        WiFi.localIP()
+        WiFi.softAPIP()
     );
+
+
+    if (
+        WiFi.status() ==
+        WL_CONNECTED
+    )
+    {
+
+        Serial.print(
+            "Home URL: http://"
+        );
+
+
+        Serial.println(
+            WiFi.localIP()
+        );
+
+    }
 
 
     Serial.println(
-        "================================"
+        "========================================"
     );
+
 }
 
 
@@ -1351,22 +1644,24 @@ void setup()
 
 void loop()
 {
-    // ========================================================
-    // HTTP
-    // ========================================================
+
+    // --------------------------------------------------------
+    // WEB SERVER
+    // --------------------------------------------------------
 
     server.handleClient();
 
 
-    // ========================================================
+    // --------------------------------------------------------
     // CHECK ALARM
-    // ========================================================
+    // --------------------------------------------------------
 
     if (
         alarmRunning &&
         !alarmTriggered
     )
     {
+
         unsigned long elapsed =
             millis() -
             alarmStartMillis;
@@ -1377,20 +1672,16 @@ void loop()
             alarmDurationMillis
         )
         {
+
             alarmTriggered =
                 true;
 
 
             Serial.println();
+
             Serial.println(
                 "!!! ALARM !!!"
             );
-
-
-            // Начинаем мигать сразу
-
-            lastBlinkMillis =
-                millis();
 
 
             ledState =
@@ -1401,16 +1692,25 @@ void loop()
                 LED_PIN,
                 HIGH
             );
+
+
+            lastBlinkMillis =
+                millis();
+
         }
+
     }
 
 
-    // ========================================================
+    // --------------------------------------------------------
     // BLINK LED
-    // ========================================================
+    // --------------------------------------------------------
 
-    if (alarmTriggered)
+    if (
+        alarmTriggered
+    )
     {
+
         unsigned long now =
             millis();
 
@@ -1421,6 +1721,7 @@ void loop()
             BLINK_INTERVAL
         )
         {
+
             lastBlinkMillis =
                 now;
 
@@ -1435,6 +1736,9 @@ void loop()
                     ? HIGH
                     : LOW
             );
+
         }
+
     }
+
 }
