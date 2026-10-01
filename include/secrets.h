@@ -1,4 +1,4 @@
 #pragma once
 
-#define WIFI_SSID "TP-Link_435B"
-#define WIFI_PASSWORD "81458547"
+#define WIFI_SSID "example"
+#define WIFI_PASSWORD "example"
